@@ -15,16 +15,22 @@ plugin = routing.Plugin()
 DEVICE_ID = str(uuid.uuid4())
 
 
-@plugin.route("/list_search")
-def list_search():
-    search_term = xbmcgui.Dialog().input("Поиск")
+@plugin.route("/list_search/<term>/<page>")
+def list_search(term, page):
+    search_term = term
+
+    if term == "_":
+        search_term = xbmcgui.Dialog().input("Поиск")
+
     search_result = requests.get(
-        f"https://premier.one/app/v1.2/search?query={search_term}&page=1&picture_type=card_group&system=hwi_vod_id%2Chwi_world&is_active=1&device=web",
+        f"https://premier.one/app/v1.2/search?query={search_term}&page={page}&picture_type=card_group&system=hwi_vod_id%2Chwi_world&is_active=1&device=web",
         headers={"x-device-type": "browser", "x-device-id": DEVICE_ID},
     ).json()
 
     for card in search_result["results"]:
-        list_item = xbmcgui.ListItem(label=card["name"])
+        list_item = xbmcgui.ListItem(
+            label=f'[B]{card["type"]["title"]}[/B] - {card["name"]}'
+        )
         list_item.setArt({"thumb": card["picture"]})
 
         list_item.setInfo(
@@ -37,7 +43,22 @@ def list_search():
         )
 
         url = plugin.url_for(list_seasons, program=card["slug"])
-        xbmcplugin.addDirectoryItem(plugin.handle, url, list_item, True)
+
+        if card["type"]["name"] == "movie":
+            list_item.setProperty("IsPlayable", "true")
+            url = plugin.url_for(play_video, media_id=f'p:{card["slug"]}')
+
+        xbmcplugin.addDirectoryItem(
+            plugin.handle, url, list_item, not list_item.getProperty("IsPlayable")
+        )
+
+    if search_result["has_next"]:
+        xbmcplugin.addDirectoryItem(
+            plugin.handle,
+            plugin.url_for(list_search, term=search_term, page=int(page) + 1),
+            xbmcgui.ListItem(label="следующий"),
+            True,
+        )
 
     xbmcplugin.endOfDirectory(plugin.handle)
 
@@ -71,7 +92,7 @@ def list_main_menu():
 
     xbmcplugin.addDirectoryItem(
         plugin.handle,
-        plugin.url_for(list_search),
+        plugin.url_for(list_search, term='_', page=1),
         xbmcgui.ListItem(label="Поиск (Может работать)"),
         True,
     )
@@ -93,8 +114,9 @@ def list_programs(page=1):
     )
 
     for card in card_group["results"]:
-
-        list_item = xbmcgui.ListItem(label=card["object"]["name"])
+        list_item = xbmcgui.ListItem(
+            label=f'[B]{card["type"]["title"]}[/B] - {card["object"]["name"]}'
+        )
         list_item.setArt({"thumb": card["object"]["picture"]})
 
         list_item.setInfo(
@@ -105,8 +127,16 @@ def list_programs(page=1):
                 "mediatype": "video",
             },
         )
+
         url = plugin.url_for(list_seasons, program=card["object"]["slug"])
-        xbmcplugin.addDirectoryItem(plugin.handle, url, list_item, True)
+
+        if card["type"]["name"] == "movie":
+            list_item.setProperty("IsPlayable", "true")
+            url = plugin.url_for(play_video, media_id=f'p:{card["object"]["slug"]}')
+
+        xbmcplugin.addDirectoryItem(
+            plugin.handle, url, list_item, not list_item.getProperty("IsPlayable")
+        )
 
     if card_group["has_next"]:
         xbmcplugin.addDirectoryItem(
@@ -121,9 +151,6 @@ def list_programs(page=1):
 
 @plugin.route("/list_videos/<program>/<season>/<page>")
 def list_videos(program, season, page):
-    xbmcplugin.setPluginCategory(plugin.handle, "N/A")
-    xbmcplugin.setContent(plugin.handle, "videos")
-
     videos = requests.get(
         f"https://premier.one/uma-api/metainfo/tv/{program}/video/?show_all=1&season={season}&type=6%2C9&limit=18&origin__type=hwi%2Crtb&page={page}"
     ).json()
@@ -168,8 +195,10 @@ def list_free(page):
     ).json()
 
     for card in card_group["results"]:
+        list_item = xbmcgui.ListItem(
+            label=f'[B]{card["object"]["type"]["title"]}[/B] - {card["object"]["name"]}'
+        )
 
-        list_item = xbmcgui.ListItem(label=card["object"]["name"])
         list_item.setArt({"thumb": card["object"]["picture"]})
 
         list_item.setInfo(
@@ -180,8 +209,16 @@ def list_free(page):
                 "mediatype": "video",
             },
         )
+
         url = plugin.url_for(list_seasons, program=card["object"]["slug"])
-        xbmcplugin.addDirectoryItem(plugin.handle, url, list_item, True)
+
+        if card["object"]["type"]["name"] == "movie":
+            list_item.setProperty("IsPlayable", "true")
+            url = plugin.url_for(play_video, media_id=f'p:{card["object"]["slug"]}')
+
+        xbmcplugin.addDirectoryItem(
+            plugin.handle, url, list_item, not list_item.getProperty("IsPlayable")
+        )
 
     if card_group["has_next"]:
         xbmcplugin.addDirectoryItem(
@@ -196,11 +233,31 @@ def list_free(page):
 
 @plugin.route("/play_video/<media_id>")
 def play_video(media_id):
-    media = requests.get(
-        f"https://premier.one/api/play/options/{media_id}/?format=json&no_404=true&referer=https://premier.one/show/istoriya-na-noch/season/1/episode/18?fullscreen=true"
-    ).json()
+    if media_id.startswith("p:"):
+        _, program = media_id.split("p:")
+        video = requests.get(
+            f"https://premier.one/uma-api/metainfo/tv/{program}/video/?show_all=1&season=0&type=6%2C9&limit=18&origin__type=hwi%2Crtb&page=1"
+        ).json()
 
-    play_item = xbmcgui.ListItem(path=media["video_balancer"]["default"])
+        media_id = video["results"][0]["id"]
+
+    response = requests.get(
+        f"https://premier.one/api/play/options/{media_id}/?format=json&no_404=true&referer=https://premier.one/show/istoriya-na-noch/season/1/episode/18?fullscreen=true"
+    )
+
+    json_response = response.json()
+
+    if response.status_code != 200:
+        error_message = next(
+            x["title"]
+            for x in json_response["detail"]["languages"]
+            if x["lang"] == "rus"
+        )
+        xbmcgui.Dialog().ok("Ошибка", error_message)
+        return
+
+    play_item = xbmcgui.ListItem(path=json_response["video_balancer"]["default"])
+
     xbmcplugin.setResolvedUrl(plugin.handle, True, listitem=play_item)
 
 

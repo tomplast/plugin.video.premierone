@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <addon id="plugin.video.premierone"
-version="0.1.0"
+version="0.2.0"
 name="Premier One"
 provider-name="tomplast">
 <requires>
@@ -17,7 +17,9 @@ provider-name="tomplast">
   <assets>
     <icon>icon.png</icon>
   </assets>
-  <news>v0.1.0 (2022-12-31)
-  - Initial release</news>
+  <news>v0.2.0 (2023-01-01)
+  - Play movies directly (without having to chose "season 0" and select single video entry).
+  - Bug fixes.
+  - General improvements.</news>
 </extension>
 </addon>
